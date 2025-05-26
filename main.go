@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -11,17 +10,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"slices"
 	"strings"
 	"sync"
 	"text/template"
+
+	"github.com/mattn/go-shellwords"
 )
 
 // TODO: add support for handling files
-// TODO: escape single and double quotes in files
-// TODO: add option to continue on errors
 
 func main() {
 	// Check that ffmpeg is installed and available in PATH
@@ -110,12 +108,10 @@ func main() {
 	maxGoroutines := runtime.NumCPU()
 	sem := make(chan struct{}, maxGoroutines)
 	var wg sync.WaitGroup
-	var firstErr error
-	var errMutex sync.Mutex
 
-	// Set up context for cancellation on first error
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// Error collection - collect all errors instead of stopping on first one
+	var collectedErrors []error
+	var errorMutex sync.Mutex
 
 	if !quiet {
 		fmt.Printf("using %d worker threads for parallel processing\n", maxGoroutines)
@@ -151,12 +147,26 @@ func main() {
 	}
 
 	// Statistics tracking
-	var processedFiles, skippedFiles, movedFiles int
+	var processedFiles, skippedFiles, movedFiles, failedFiles int
+	var statsMutex sync.Mutex
+
+	// Function to safely add errors to the collection
+	addError := func(err error) {
+		errorMutex.Lock()
+		collectedErrors = append(collectedErrors, err)
+		errorMutex.Unlock()
+
+		statsMutex.Lock()
+		failedFiles++
+		statsMutex.Unlock()
+	}
 
 	// Walk through source directory and process files
 	err := filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return err
+			// Log the walking error but continue processing
+			addError(fmt.Errorf("error accessing %s: %w", path, err))
+			return nil // Continue walking despite this error
 		}
 
 		// Skip directories
@@ -206,7 +216,9 @@ func main() {
 			if !quiet {
 				fmt.Printf("skipped (doesn't match source criteria)\n")
 			}
+			statsMutex.Lock()
 			skippedFiles++
+			statsMutex.Unlock()
 		}
 
 		if debug {
@@ -215,24 +227,16 @@ func main() {
 		}
 
 		if shouldConvert {
-			// Check for context cancellation before starting goroutine
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
-
+			statsMutex.Lock()
 			processedFiles++
+			statsMutex.Unlock()
+
 			wg.Add(1)
 			go func(inputPath, fileName string) {
 				defer wg.Done()
 				// Acquire semaphore for concurrency control
-				select {
-				case sem <- struct{}{}:
-					defer func() { <-sem }()
-				case <-ctx.Done():
-					return
-				}
+				sem <- struct{}{}
+				defer func() { <-sem }()
 
 				outputPath := filepath.Join(outputDir, fileName+targetExtension)
 
@@ -243,23 +247,13 @@ func main() {
 				// Generate the conversion command from template
 				command, err := generateConvertCommand(ffmpegConvertCommand, inputPath, outputPath)
 				if err != nil {
-					errMutex.Lock()
-					if firstErr == nil {
-						firstErr = err
-						cancel()
-					}
-					errMutex.Unlock()
+					addError(fmt.Errorf("failed to generate command for %s: %w", inputPath, err))
 					return
 				}
 
 				// Execute the conversion command
 				if err = runCommand(command, quiet); err != nil {
-					errMutex.Lock()
-					if firstErr == nil {
-						firstErr = err
-						cancel()
-					}
-					errMutex.Unlock()
+					addError(fmt.Errorf("failed to convert %s: %w", inputPath, err))
 					return
 				}
 
@@ -269,12 +263,8 @@ func main() {
 						fmt.Printf("deleting original file: %s\n", inputPath)
 					}
 					if err := os.Remove(inputPath); err != nil {
-						errMutex.Lock()
-						if firstErr == nil {
-							firstErr = fmt.Errorf("failed to delete original file %s: %w", inputPath, err)
-							cancel()
-						}
-						errMutex.Unlock()
+						addError(fmt.Errorf("failed to delete original file %s: %w", inputPath, err))
+						return
 					}
 				}
 
@@ -291,23 +281,29 @@ func main() {
 				if !quiet {
 					fmt.Printf("already in output directory - skipping\n")
 				}
+				statsMutex.Lock()
 				skippedFiles++
+				statsMutex.Unlock()
 			} else {
+				statsMutex.Lock()
 				movedFiles++
+				statsMutex.Unlock()
 
 				if deleteOriginalFile {
 					if !quiet {
 						fmt.Printf("moving: %s -> %s\n", path, outputPath)
 					}
 					if err := os.Rename(path, outputPath); err != nil {
-						return fmt.Errorf("failed to move file %s: %w", path, err)
+						addError(fmt.Errorf("failed to move file %s: %w", path, err))
+						return nil // Continue processing other files
 					}
 				} else {
 					if !quiet {
 						fmt.Printf("copying: %s -> %s\n", path, outputPath)
 					}
 					if err := copyFile(path, outputPath); err != nil {
-						return fmt.Errorf("failed to copy file %s: %w", path, err)
+						addError(fmt.Errorf("failed to copy file %s: %w", path, err))
+						return nil // Continue processing other files
 					}
 				}
 				if !quiet {
@@ -320,7 +316,7 @@ func main() {
 	})
 
 	if err != nil {
-		log.Fatalf("error walking directory: %v", err)
+		addError(fmt.Errorf("error walking directory: %w", err))
 	}
 
 	if !quiet {
@@ -329,16 +325,26 @@ func main() {
 
 	wg.Wait()
 
-	// Check for errors and report final results
-	if firstErr != nil {
-		log.Fatalf("error converting files: %v", firstErr)
+	// Report final results
+	if !quiet {
+		fmt.Printf("\n=== conversion summary ===\n")
+		fmt.Printf("files converted: %d\n", processedFiles-failedFiles)
+		fmt.Printf("files moved/copied: %d\n", movedFiles)
+		fmt.Printf("files skipped: %d\n", skippedFiles)
+		fmt.Printf("files failed: %d\n", failedFiles)
+		fmt.Printf("total files processed: %d\n", processedFiles+movedFiles+skippedFiles)
+	}
+
+	// Report all collected errors
+	if len(collectedErrors) > 0 {
+		fmt.Printf("\n=== errors encountered ===\n")
+		for i, err := range collectedErrors {
+			fmt.Printf("Error %d: %v\n", i+1, err)
+		}
+		fmt.Printf("\n❌ completed with %d errors\n", len(collectedErrors))
+		os.Exit(1)
 	} else {
 		if !quiet {
-			fmt.Printf("\n=== conversion summary ===\n")
-			fmt.Printf("files converted: %d\n", processedFiles)
-			fmt.Printf("files moved/copied: %d\n", movedFiles)
-			fmt.Printf("files skipped: %d\n", skippedFiles)
-			fmt.Printf("total files processed: %d\n", processedFiles+movedFiles+skippedFiles)
 			fmt.Println("✅ all conversions completed successfully!")
 		}
 	}
@@ -371,22 +377,17 @@ func generateConvertCommand(tmpl, inputFile, outputFile string) (string, error) 
 
 // splitCommand splits a command string into arguments, handling quoted strings properly.
 // This allows commands with spaces in file paths to work correctly.
-func splitCommand(command string) []string {
-	re := regexp.MustCompile(`(?:[^\s'"]+|['"][^'"]*['"])`)
-	matches := re.FindAllString(command, -1)
-	// Remove quotes from quoted arguments
-	for i, match := range matches {
-		if len(match) > 1 && (match[0] == '"' || match[0] == '\'') && match[len(match)-1] == match[0] {
-			matches[i] = match[1 : len(match)-1]
-		}
-	}
-	return matches
+func splitCommand(command string) ([]string, error) {
+	return shellwords.Parse(command)
 }
 
 // runCommand executes a shell command and handles output based on quiet flag.
 func runCommand(command string, quiet bool) error {
 	var cmd *exec.Cmd
-	commandParts := splitCommand(command)
+	commandParts, err := splitCommand(command)
+	if err != nil {
+		return err
+	}
 	lenCmdStringParts := len(commandParts)
 
 	if lenCmdStringParts == 0 {
