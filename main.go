@@ -20,6 +20,8 @@ import (
 )
 
 // TODO: add support for handling files
+// TODO: escape single and double quotes in files
+// TODO: add option to continue on errors
 
 func main() {
 	// Check that ffmpeg is installed and available in PATH
@@ -60,7 +62,7 @@ func main() {
 	flag.BoolVar(&debug, "debug", false, "show detailed debug information")
 
 	var ffmpegConvertCommand string
-	defaultConvertCommand := "ffmpeg -y -i \"{{ .InputFile }}\" \"{{ .OutputFile }}\""
+	defaultConvertCommand := `ffmpeg -y -i "{{ .InputFile }}" "{{ .OutputFile }}"`
 	flag.StringVar(&ffmpegConvertCommand, "command", defaultConvertCommand, "ffmpeg convert command with Go template placeholders")
 
 	flag.Parse()
