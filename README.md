@@ -1,31 +1,48 @@
-# **c**onvenient **a**udio **c**onverter
+# **c**onvenient **a**udio **c**onverter [![Go Reference](https://pkg.go.dev/badge/golang.org/x/example.svg)](https://pkg.go.dev/github.com/vanillaiice/cac) [![Go Report Card](https://goreportcard.com/badge/github.com/vanillaiice/cac)](https://goreportcard.com/report/github.com/vanillaiice/cac)
 
 cac is a command line tool to convert audio files using ffmpeg.
+
+# Install
+
+```sh
+$ go install github.com/vanillaiice/cac@latest
+```
 
 # Usage
 
 ```sh
-Usage of ./cac:
-  -command string
-    	ffmpeg convert command with Go template placeholders (default "ffmpeg -y -i \"{{ .InputFile }}\" \"{{ .OutputFile }}\"")
-  -create
-    	create output directory if it does not exist
-  -debug
-    	show detailed debug information
-  -delete
-    	delete original files after converting/moving
-  -except-exts string
-    	do not convert files with specified extensions
-  -output string
-    	output directory of converted/moved files (default "converted")
-  -quiet
-    	only show error logs
-  -source-exts string
-    	convert files with specified extensions
-  -src string
-    	convert files from specified directory
-  -target-ext string
-    	convert to specified extension (default ".mp3")
+# convert all opus files in a directory to mp3 to the 'converted' folder
+$ cac --dir ~/Music --sources ".opus" --target ".mp3" -out-dir converted --create-out-dir
+```
+
+# Help
+
+```sh
+NAME:
+   cac - conveniently convert audio files using ffmpeg
+
+USAGE:
+   cac [global options]
+
+VERSION:
+   v0.2.0
+
+AUTHOR:
+   vanillaiice
+
+GLOBAL OPTIONS:
+   --command string                                             ffmpeg convert command with Go template placeholders (default: "ffmpeg -y -i \"{{ .InputFile }}\" \"{{ .OutputFile }}\"")
+   --dir DIRECTORY, -d DIRECTORY                                convert files in DIRECTORY
+   --files FILES, -f FILES [ --files FILES, -f FILES ]          convert FILES
+   --target string, -t string                                   convert files to target extension (default: ".mp3")
+   --except string, -e string [ --except string, -e string ]    do not convert files with specified extensions
+   --sources string, -s string [ --sources string, -s string ]  convert files with specified extensions
+   --out-dir string, -o string                                  output directory of processed files (default: ".")
+   --create-out-dir, -c                                         create output directory if it does not exist (default: false)
+   --delete, -D                                                 delete original files after converting/moving (default: false)
+   --quiet, -q                                                  only show error logs (default: false)
+   --help, -h                                                   show help
+   --version, -v                                                print the version
 ```
 
 # Author
