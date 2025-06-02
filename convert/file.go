@@ -25,7 +25,7 @@ const (
 	fileActionFail    fileActionType = iota // converting the file failed.
 	fileActionConvert                       // converting the file succeeded.
 	fileActionMove                          // the file was moved/copied.
-	fileActionSkip                          // the file was skipped
+	fileActionSkip                          // the file was skipped.
 )
 
 func ConvertFile(convertFileOpts *ConvertFileOpts) (error, fileActionType) {
