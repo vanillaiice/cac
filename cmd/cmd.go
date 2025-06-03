@@ -55,19 +55,19 @@ func Run(ctx context.Context) {
 				Value:   ".mp3",
 				Validator: func(s string) error {
 					if s == "" {
-						return fmt.Errorf("target extension cannot be empty  string")
+						return fmt.Errorf("target extension cannot be an empty string")
 					}
 					return nil
 				},
 			},
 			&cli.StringSliceFlag{
 				Name:    "except",
-				Usage:   "do not convert files with specified extensions",
+				Usage:   "do not convert files with specified extensions (only applicable with --dir flag)",
 				Aliases: []string{"e"},
 			},
 			&cli.StringSliceFlag{
 				Name:    "sources",
-				Usage:   "convert files with specified extensions",
+				Usage:   "convert files with specified extensions (only applicable with --dir flag, takes precedence over --except flag)",
 				Aliases: []string{"s"},
 			},
 			&cli.StringFlag{
@@ -84,7 +84,7 @@ func Run(ctx context.Context) {
 			},
 			&cli.BoolFlag{
 				Name:    "delete",
-				Usage:   "delete original files after converting/moving",
+				Usage:   "delete original files after processing",
 				Value:   false,
 				Aliases: []string{"D"},
 			},
