@@ -25,7 +25,7 @@ USAGE:
    cac [global options]
 
 VERSION:
-   v0.2.0
+   v0.2.2
 
 AUTHOR:
    vanillaiice
@@ -35,11 +35,11 @@ GLOBAL OPTIONS:
    --dir DIRECTORY, -d DIRECTORY                                convert files in DIRECTORY
    --files FILES, -f FILES [ --files FILES, -f FILES ]          convert FILES
    --target string, -t string                                   convert files to target extension (default: ".mp3")
-   --except string, -e string [ --except string, -e string ]    do not convert files with specified extensions
-   --sources string, -s string [ --sources string, -s string ]  convert files with specified extensions
+   --except string, -e string [ --except string, -e string ]    do not convert files with specified extensions (only applicable with --dir flag)
+   --sources string, -s string [ --sources string, -s string ]  convert files with specified extensions (only applicable with --dir flag, takes precedence over --except flag)
    --out-dir string, -o string                                  output directory of processed files (default: ".")
    --create-out-dir, -c                                         create output directory if it does not exist (default: false)
-   --delete, -D                                                 delete original files after converting/moving (default: false)
+   --delete, -D                                                 delete original files after processing (default: false)
    --quiet, -q                                                  only show error logs (default: false)
    --help, -h                                                   show help
    --version, -v                                                print the version
