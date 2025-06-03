@@ -6,6 +6,7 @@ import (
 	"log"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 )
 
@@ -57,31 +58,41 @@ func ConvertDir(convertDirOpts *ConvertDirOpts) error {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			err, fileAction := ConvertFile(&ConvertFileOpts{
-				Command:         convertDirOpts.Command,
-				Path:            inputPath,
-				TargetExtension: convertDirOpts.TargetExtension,
-				OutDir:          convertDirOpts.OutDir,
-				DeleteOriginal:  convertDirOpts.DeleteOriginal,
-				Quiet:           convertDirOpts.Quiet,
-			})
-
-			if err != nil {
-				addError(err)
+			var shouldProcess bool
+			if slices.Contains(convertDirOpts.Sources, convertDirOpts.TargetExtension) {
+				shouldProcess = true
+			} else if !slices.Contains(convertDirOpts.Except, convertDirOpts.TargetExtension) {
+				shouldProcess = true
 			}
 
-			statsMutex.Lock()
-			switch fileAction {
-			case fileActionFail:
-				failedFiles++
-			case fileActionConvert:
-				processedFiles++
-			case fileActionMove:
-				movedFiles++
-			case fileActionSkip:
-				skippedFiles++
+			if shouldProcess {
+				err, fileAction := ConvertFile(&ConvertFileOpts{
+					Command:         convertDirOpts.Command,
+					Path:            inputPath,
+					TargetExtension: convertDirOpts.TargetExtension,
+					OutDir:          convertDirOpts.OutDir,
+					DeleteOriginal:  convertDirOpts.DeleteOriginal,
+					Quiet:           convertDirOpts.Quiet,
+				})
+
+				if err != nil {
+					addError(err)
+				}
+
+				statsMutex.Lock()
+				switch fileAction {
+				case fileActionFail:
+					failedFiles++
+				case fileActionConvert:
+					processedFiles++
+				case fileActionMove:
+					movedFiles++
+				case fileActionSkip:
+					skippedFiles++
+				}
+				statsMutex.Unlock()
+
 			}
-			statsMutex.Unlock()
 		}(path)
 
 		return nil
